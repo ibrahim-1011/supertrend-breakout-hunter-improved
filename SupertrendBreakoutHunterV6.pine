@@ -1,0 +1,727 @@
+//@version=6
+indicator(
+     "Supertrend Breakout Hunter V6 | نظام القرار الذكي",
+     overlay=true,
+     max_labels_count=500
+)
+
+//====================================================
+// 1) DECISION SYSTEM LEVELS
+//====================================================
+// نظام 4 مستويات واضحة جداً:
+// ❌ NO TRADE - لا تدخل نهائياً
+// ⏳ WAIT - انتظر الفرصة القادمة
+// 🟡 CAUTION - ادخل بحذر وحجم صغير
+// 🟢 BUY - ادخل الآن بثقة
+// 🔥 STRONG BUY - ادخل بكل قوتك
+
+//====================================================
+// 2) SETTINGS
+//====================================================
+
+groupHTF = "1 - الخلفية"
+groupBEH = "2 - شمعة السلوك"
+groupST  = "3 - Supertrend"
+groupVOL = "4 - السيولة"
+groupMOM = "5 - الزخم"
+groupSC  = "6 - النقاط"
+groupTP  = "7 - الأهداف"
+groupVIS = "8 - العرض"
+groupDEC = "9 - نظام القرار"
+
+//-------------------------
+// Background
+//-------------------------
+
+useHTF = input.bool(true, "تفعيل الخلفية الشهرية والأسبوعية", group=groupHTF)
+monthlyEmaLen = input.int(20, "EMA الشهري", minval=5, group=groupHTF)
+weeklyEmaLen = input.int(20, "EMA الأسبوعي", minval=5, group=groupHTF)
+
+//-------------------------
+// Behavioral Candle
+//-------------------------
+
+behaviorPct = input.float(3.0, "حركة شمعة السلوك %", minval=0.5, step=0.1, group=groupBEH)
+behaviorLookback = input.int(30, "صلاحية شمعة السلوك", minval=3, maxval=200, group=groupBEH)
+nearBehaviorPct = input.float(2.0, "القرب من قمة شمعة السلوك %", minval=0.1, step=0.1, group=groupBEH)
+minBehaviorRVOL = input.float(0.8, "أقل RVOL لشمعة السلوك", minval=0.1, step=0.1, group=groupBEH)
+
+//-------------------------
+// Supertrend
+//-------------------------
+
+sensitivity = input.float(2.4, "Sensitivity", minval=0.1, step=0.1, group=groupST)
+stLen = input.int(10, "ATR Length", minval=1, maxval=100, group=groupST)
+minBarsBelowST = input.int(10, "الحد الأدنى تحت Supertrend", minval=1, maxval=200, group=groupST)
+
+//-------------------------
+// Volume
+//-------------------------
+
+volumeLen = input.int(20, "متوسط الحجم", minval=2, group=groupVOL)
+strongRVOL = input.float(1.5, "RVOL قوي", minval=0.1, step=0.1, group=groupVOL)
+preRVOL = input.float(1.1, "RVOL بداية النشاط", minval=0.5, step=0.05, group=groupVOL)
+
+//-------------------------
+// Momentum
+//-------------------------
+
+macdFast = input.int(12, "MACD Fast", minval=1, group=groupMOM)
+macdSlow = input.int(26, "MACD Slow", minval=2, group=groupMOM)
+macdSignal = input.int(9, "MACD Signal", minval=1, group=groupMOM)
+emaLen = input.int(200, "EMA 200", minval=20, group=groupMOM)
+
+//-------------------------
+// Scoring
+//-------------------------
+
+strongScore = input.int(7, "Strong Score", minval=1, maxval=10, group=groupSC)
+explosiveScore = input.int(8, "Explosive Score", minval=1, maxval=10, group=groupSC)
+preAlertScore = input.int(6, "Pre-Breakout Score", minval=1, maxval=10, group=groupSC)
+
+//-------------------------
+// Targets
+//-------------------------
+
+target1Pct = input.float(3.0, "Target 1 %", minval=0.1, step=0.1, group=groupTP)
+target2Pct = input.float(5.0, "Target 2 %", minval=0.1, step=0.1, group=groupTP)
+target3Pct = input.float(8.0, "Target 3 %", minval=0.1, step=0.1, group=groupTP)
+
+stopLossPct = input.float(2.0, "Stop Loss %", minval=0.5, step=0.1, group=groupTP)
+
+//-------------------------
+// Display
+//-------------------------
+
+showST = input.bool(true, "إظهار Supertrend", group=groupVIS)
+showEMA = input.bool(true, "إظهار EMA 200", group=groupVIS)
+showBehaviorHigh = input.bool(true, "إظهار قمة شمعة السلوك", group=groupVIS)
+showSignals = input.bool(true, "إظهار الإشارات", group=groupVIS)
+showDashboard = input.bool(true, "إظهار اللوحة", group=groupVIS)
+showTargets = input.bool(false, "إظهار الأهداف", group=groupVIS)
+
+//-------------------------
+// Decision System
+//-------------------------
+
+decisionMode = input.string("SMART", "نمط القرار", options=["SMART", "CONSERVATIVE", "AGGRESSIVE"], group=groupDEC)
+minOverallScore = input.int(5, "الحد الأدنى للنقاط الإجمالية", minval=1, maxval=10, group=groupDEC)
+
+//====================================================
+// 3) SUPERTREND
+//====================================================
+
+f_supertrend(src, factor, len) =>
+    atrValue = ta.atr(len)
+    upper = src + factor * atrValue
+    lower = src - factor * atrValue
+    prevUpper = nz(upper[1])
+    prevLower = nz(lower[1])
+    upper := (upper < prevUpper or close[1] > prevUpper ? upper : prevUpper)
+    lower := (lower > prevLower or close[1] < prevLower ? lower : prevLower)
+    var float stValue = na
+    int direction = 1
+    if na(stValue[1])
+        direction := close >= src ? 1 : -1
+    else if stValue[1] == prevUpper
+        direction := close > upper ? 1 : -1
+    else
+        direction := close < lower ? -1 : 1
+    stValue := direction == 1 ? lower : upper
+    stValue
+
+st = f_supertrend(close, sensitivity, stLen)
+stRising = st > st[1]
+priceAboveST = close > st
+stBreakout = ta.crossover(close, st) and barstate.isconfirmed
+
+//====================================================
+// 4) BARS BELOW SUPERTREND
+//====================================================
+
+var int barsBelowST = 0
+
+if close < st
+    barsBelowST := nz(barsBelowST[1]) + 1
+else
+    barsBelowST := 0
+
+barsBelowBeforeBreakout = nz(barsBelowST[1])
+longPressure = barsBelowBeforeBreakout >= minBarsBelowST
+
+//====================================================
+// 5) EMA 200
+//====================================================
+
+ema200 = ta.ema(close, emaLen)
+aboveEMA200 = close > ema200
+ema200Rising = ema200 > ema200[5]
+
+//====================================================
+// 6) MACD
+//====================================================
+
+[macdLine, macdSignalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
+macdBullish = macdLine > macdSignalLine and macdHist > 0
+macdImproving = macdHist > macdHist[1]
+
+//====================================================
+// 7) VOLUME / LIQUIDITY
+//====================================================
+
+avgVolume = ta.sma(volume, volumeLen)
+rvol = avgVolume > 0 ? volume / avgVolume : na
+strongLiquidity = rvol >= strongRVOL
+preLiquidity = rvol >= preRVOL
+rvolIncreasing = rvol > rvol[1]
+priceIncreasing = close > close[1]
+liquidityMomentum = preLiquidity and rvolIncreasing and priceIncreasing
+
+//====================================================
+// 8) BEHAVIORAL CANDLE
+//====================================================
+
+changePct = close[1] != 0 ? ((close - close[1]) / close[1]) * 100 : 0
+behaviorBear = close < open and changePct <= -behaviorPct and rvol >= minBehaviorRVOL
+
+//====================================================
+// 9) STORE LAST BEHAVIOR CANDLE
+//====================================================
+
+var float behaviorHigh = na
+var float behaviorLow = na
+var float behaviorMove = na
+var float behaviorRVOL = na
+var int behaviorBar = na
+
+if behaviorBear
+    behaviorHigh := high
+    behaviorLow := low
+    behaviorMove := math.abs(changePct)
+    behaviorRVOL := rvol
+    behaviorBar := bar_index
+
+//====================================================
+// 10) BEHAVIOR VALIDITY
+//====================================================
+
+barsSinceBehavior = not na(behaviorBar) ? bar_index - behaviorBar : na
+recentBehavior = not na(barsSinceBehavior) and barsSinceBehavior <= behaviorLookback
+
+//====================================================
+// 11) NEAR BEHAVIOR HIGH
+//====================================================
+
+distanceToBehaviorHigh =
+     recentBehavior and
+     not na(behaviorHigh) and
+     behaviorHigh != 0
+     ? ((behaviorHigh - close) / behaviorHigh) * 100
+     : na
+
+nearBehaviorHigh =
+     recentBehavior and
+     close < behaviorHigh and
+     distanceToBehaviorHigh >= 0 and
+     distanceToBehaviorHigh <= nearBehaviorPct
+
+//====================================================
+// 12) BREAK BEHAVIOR HIGH
+//====================================================
+
+behaviorHighBreak =
+     recentBehavior and
+     not na(behaviorHigh) and
+     close > behaviorHigh and
+     close[1] <= behaviorHigh and
+     barstate.isconfirmed
+
+behaviorHighBroken =
+     recentBehavior and
+     not na(behaviorHigh) and
+     close > behaviorHigh
+
+//====================================================
+// 13) MONTHLY BACKGROUND
+//====================================================
+
+monthlyClose = request.security(syminfo.tickerid, "1M", close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+monthlyEMA = request.security(syminfo.tickerid, "1M", ta.ema(close, monthlyEmaLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+monthlyEMAPrev = request.security(syminfo.tickerid, "1M", ta.ema(close, monthlyEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+monthlyStrongBull = monthlyClose > monthlyEMA and monthlyEMA > monthlyEMAPrev
+monthlyBull = monthlyClose > monthlyEMA
+monthlyStrongBear = monthlyClose < monthlyEMA and monthlyEMA < monthlyEMAPrev
+monthlyBear = monthlyClose < monthlyEMA
+
+int monthlyScore = 0
+
+if useHTF
+    if monthlyStrongBull
+        monthlyScore := 2
+    else if monthlyBull
+        monthlyScore := 1
+    else if monthlyStrongBear
+        monthlyScore := -2
+    else if monthlyBear
+        monthlyScore := -1
+
+//====================================================
+// 14) WEEKLY BACKGROUND
+//====================================================
+
+weeklyClose = request.security(syminfo.tickerid, "1W", close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+weeklyEMA = request.security(syminfo.tickerid, "1W", ta.ema(close, weeklyEmaLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+weeklyEMAPrev = request.security(syminfo.tickerid, "1W", ta.ema(close, weeklyEmaLen)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+weeklyStrongBull = weeklyClose > weeklyEMA and weeklyEMA > weeklyEMAPrev
+weeklyBull = weeklyClose > weeklyEMA
+weeklyStrongBear = weeklyClose < weeklyEMA and weeklyEMA < weeklyEMAPrev
+weeklyBear = weeklyClose < weeklyEMA
+
+int weeklyScore = 0
+
+if useHTF
+    if weeklyStrongBull
+        weeklyScore := 2
+    else if weeklyBull
+        weeklyScore := 1
+    else if weeklyStrongBear
+        weeklyScore := -2
+    else if weeklyBear
+        weeklyScore := -1
+
+//====================================================
+// 15) BACKGROUND
+//====================================================
+
+backgroundScore = monthlyScore + weeklyScore
+backgroundSupport = backgroundScore >= 2
+backgroundStrong = backgroundScore >= 3
+
+backgroundText =
+     backgroundScore >= 4
+     ? "🔥 ممتاز 4+"
+     : backgroundScore == 3
+     ? "🟢 قوي 3"
+     : backgroundScore == 2
+     ? "🟢 داعم 2"
+     : backgroundScore == 1
+     ? "🟡 +1"
+     : backgroundScore == 0
+     ? "⚪ محايد"
+     : backgroundScore == -1
+     ? "🔴 -1"
+     : "🔴 سلبي"
+
+//====================================================
+// 16) PRE-BREAKOUT SCORE
+//====================================================
+
+int preScoreRaw = 0
+
+if backgroundStrong
+    preScoreRaw += 2
+else if backgroundSupport
+    preScoreRaw += 1
+
+if longPressure
+    preScoreRaw += 2
+else if barsBelowST >= 5
+    preScoreRaw += 1
+
+if nearBehaviorHigh
+    preScoreRaw += 2
+else if recentBehavior
+    preScoreRaw += 1
+
+if macdBullish or macdImproving
+    preScoreRaw += 1
+
+if liquidityMomentum
+    preScoreRaw += 2
+else if preLiquidity
+    preScoreRaw += 1
+
+if priceAboveST
+    preScoreRaw += 1
+
+preScore = math.min(preScoreRaw, 10)
+
+preBreakoutReady =
+     recentBehavior and
+     not behaviorHighBroken and
+     preScore >= preAlertScore and
+     (backgroundSupport or longPressure)
+
+//====================================================
+// 17) BREAKOUT SCORE
+//====================================================
+
+int scoreRaw = 0
+
+if backgroundStrong
+    scoreRaw += 2
+else if backgroundSupport
+    scoreRaw += 1
+
+if behaviorHighBreak
+    scoreRaw += 2
+
+if recentBehavior
+    if behaviorMove >= 5
+        scoreRaw += 2
+    else if behaviorMove >= 3
+        scoreRaw += 1
+
+if stBreakout
+    scoreRaw += 2
+
+if longPressure
+    scoreRaw += 1
+
+if behaviorHighBreak
+    if strongLiquidity and priceIncreasing
+        scoreRaw += 2
+    else if liquidityMomentum
+        scoreRaw += 1
+    else if strongLiquidity
+        scoreRaw += 1
+
+if macdBullish
+    scoreRaw += 1
+
+breakoutScore = math.min(scoreRaw, 10)
+
+//====================================================
+// 18) SIGNAL CLASSIFICATION
+//====================================================
+
+behaviorBreakOnly = behaviorHighBreak and not stBreakout
+supertrendOnly = stBreakout and not behaviorHighBreak
+fullTrigger = behaviorHighBreak and stBreakout
+
+strongOpportunity = (behaviorHighBreak or stBreakout) and breakoutScore >= strongScore
+explosiveOpportunity = (behaviorHighBreak or stBreakout) and breakoutScore >= explosiveScore
+strongFullTrigger = fullTrigger and backgroundSupport and (strongLiquidity or liquidityMomentum)
+
+//====================================================
+// 19) LAST SIGNAL
+//====================================================
+
+newSignal = behaviorHighBreak or stBreakout
+
+var float signalPrice = na
+var int signalBar = na
+var int signalScore = 0
+var int signalBackground = 0
+var int signalPressure = 0
+var float signalRVOL = na
+var float signalBehaviorRVOL = na
+var string signalType = "—"
+
+if newSignal
+    signalPrice := close
+    signalBar := bar_index
+    signalScore := breakoutScore
+    signalBackground := backgroundScore
+    signalPressure := barsBelowBeforeBreakout
+    signalRVOL := rvol
+    signalBehaviorRVOL := behaviorRVOL
+    if fullTrigger
+        signalType := "FULL"
+    else if behaviorHighBreak
+        signalType := "BHB"
+    else
+        signalType := "ST"
+
+//====================================================
+// 20) TARGETS & STOP LOSS
+//====================================================
+
+target1 = not na(signalPrice) ? signalPrice * (1 + target1Pct / 100) : na
+target2 = not na(signalPrice) ? signalPrice * (1 + target2Pct / 100) : na
+target3 = not na(signalPrice) ? signalPrice * (1 + target3Pct / 100) : na
+stopLoss = not na(signalPrice) ? signalPrice * (1 - stopLossPct / 100) : na
+
+//====================================================
+// 21) TARGET STATUS
+//====================================================
+
+var bool target1Hit = false
+var bool target2Hit = false
+var bool target3Hit = false
+
+if newSignal
+    target1Hit := false
+    target2Hit := false
+    target3Hit := false
+
+if not na(signalPrice)
+    if high >= target1
+        target1Hit := true
+    if high >= target2
+        target2Hit := true
+    if high >= target3
+        target3Hit := true
+
+//====================================================
+// 22) MOVEMENT AFTER SIGNAL
+//====================================================
+
+var float maxMovePct = na
+
+if newSignal
+    maxMovePct := 0.0
+else if not na(signalPrice)
+    moveHigh = signalPrice != 0 ? ((high - signalPrice) / signalPrice) * 100 : na
+    if not na(moveHigh)
+        maxMovePct := na(maxMovePct) ? moveHigh : math.max(maxMovePct, moveHigh)
+
+currentMovePct =
+     not na(signalPrice) and
+     signalPrice != 0
+     ? ((close - signalPrice) / signalPrice) * 100
+     : na
+
+//====================================================
+// 23) ⭐ DECISION SYSTEM (نظام القرار الذكي)
+//====================================================
+
+// نقطة حاسمة: حساب جودة الدخول الحالي
+
+// 1) حساب درجة الخلفية (0-10)
+bgScore = 
+    backgroundScore >= 3 ? 10 :
+    backgroundScore == 2 ? 7 :
+    backgroundScore == 1 ? 4 :
+    backgroundScore == 0 ? 2 :
+    0
+
+// 2) حساب درجة الإشارة (0-10)
+signalQuality =
+    explosiveOpportunity ? 10 :
+    strongOpportunity ? 8 :
+    breakoutScore >= 6 ? 6 :
+    breakoutScore >= 4 ? 4 :
+    preBreakoutReady ? 5 :
+    2
+
+// 3) حساب درجة السيولة (0-10)
+liquidityScore =
+    strongLiquidity and rvolIncreasing ? 10 :
+    strongLiquidity ? 7 :
+    liquidityMomentum ? 8 :
+    preLiquidity ? 5 :
+    2
+
+// 4) حساب درجة الموضع (0-10)
+positionScore =
+    aboveEMA200 ? 8 :
+    priceAboveST ? 6 :
+    2
+
+// 5) الحساب النهائي
+overallScore = (bgScore + signalQuality + liquidityScore + positionScore) / 4
+
+// ⭐ تحديد مستوى القرار الأساسي
+baseDecision =
+    backgroundScore < 0 ? "NO TRADE" :
+    overallScore < 3 ? "NO TRADE" :
+    overallScore < 5 ? "WAIT" :
+    overallScore < 7 ? "CAUTION" :
+    overallScore < 8.5 ? "BUY" :
+    "STRONG BUY"
+
+// ⭐ تطبيق نمط القرار (SMART, CONSERVATIVE, AGGRESSIVE)
+finalDecision =
+    decisionMode == "CONSERVATIVE" ?
+        (
+            baseDecision == "STRONG BUY" ? "BUY" :
+            baseDecision == "BUY" ? "CAUTION" :
+            baseDecision == "CAUTION" ? "WAIT" :
+            baseDecision
+        ) :
+    decisionMode == "AGGRESSIVE" ?
+        (
+            baseDecision == "CAUTION" ? "BUY" :
+            baseDecision == "WAIT" ? "CAUTION" :
+            baseDecision
+        ) :
+    baseDecision
+
+// ألوان القرار
+decisionColor =
+    finalDecision == "STRONG BUY" ? color.new(color.green, 20) :
+    finalDecision == "BUY" ? color.new(color.lime, 30) :
+    finalDecision == "CAUTION" ? color.new(color.yellow, 40) :
+    finalDecision == "WAIT" ? color.new(color.orange, 50) :
+    color.new(color.red, 60)
+
+decisionText =
+    finalDecision == "STRONG BUY" ? "🔥 ادخل الآن بكل قوة" :
+    finalDecision == "BUY" ? "🟢 ادخل الآن" :
+    finalDecision == "CAUTION" ? "🟡 ادخل بحذر وحجم صغير" :
+    finalDecision == "WAIT" ? "⏳ انتظر الفرصة القادمة" :
+    "❌ لا تدخل نهائياً"
+
+decisionEmoji =
+    finalDecision == "STRONG BUY" ? "🔥" :
+    finalDecision == "BUY" ? "🟢" :
+    finalDecision == "CAUTION" ? "🟡" :
+    finalDecision == "WAIT" ? "⏳" :
+    "❌"
+
+//====================================================
+// 24) COLORS
+//====================================================
+
+stColor = stRising ? color.lime : color.red
+
+//====================================================
+// 25) PLOTS
+//====================================================
+
+plot(showST ? st : na, title="Supertrend", color=stColor, linewidth=2)
+plot(showEMA ? ema200 : na, title="EMA 200", color=color.orange, linewidth=1)
+plot(showBehaviorHigh and recentBehavior ? behaviorHigh : na, title="Behavior High", color=color.red, linewidth=2, style=plot.style_stepline)
+
+// رسم Stop Loss و Targets
+plot(showTargets ? stopLoss : na, title="Stop Loss", color=color.red, style=plot.style_linebr, linewidth=2)
+plot(showTargets ? target1 : na, title="Target 1", color=color.green, style=plot.style_linebr)
+plot(showTargets ? target2 : na, title="Target 2", color=color.blue, style=plot.style_linebr)
+plot(showTargets ? target3 : na, title="Target 3", color=color.purple, style=plot.style_linebr)
+
+// خلفية لون القرار
+bgcolor(finalDecision != "NO TRADE" and finalDecision != "WAIT" and barstate.islast ? decisionColor : na, title="Decision Background")
+
+//====================================================
+// 26) SIGNALS
+//====================================================
+
+plotshape(showSignals and behaviorBear, title="Behavior Bear", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny, text="-3%")
+
+plotshape(showSignals and preBreakoutReady, title="Pre Breakout", style=shape.labelup, location=location.belowbar, color=color.yellow, textcolor=color.black, size=size.tiny, text="استعداد")
+
+plotshape(showSignals and behaviorHighBreak, title="Behavior High Break", style=shape.triangleup, location=location.belowbar, color=color.orange, size=size.small, text="BHB")
+
+plotshape(showSignals and stBreakout, title="Supertrend Breakout", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.small, text="ST")
+
+plotshape(showSignals and fullTrigger, title="FULL Trigger", style=shape.labelup, location=location.belowbar, color=color.aqua, textcolor=color.black, size=size.small, text="FULL")
+
+plotshape(showSignals and strongOpportunity, title="Strong Opportunity", style=shape.labelup, location=location.belowbar, color=color.green, textcolor=color.white, size=size.small, text="7+")
+
+plotshape(showSignals and explosiveOpportunity, title="Explosive Opportunity", style=shape.labelup, location=location.belowbar, color=color.aqua, textcolor=color.black, size=size.small, text="8+")
+
+plotshape(showSignals and strongFullTrigger, title="Strong Full", style=shape.labelup, location=location.belowbar, color=color.blue, textcolor=color.white, size=size.small, text="🔥")
+
+//====================================================
+// 27) DASHBOARD - لوحة المعلومات المحسّنة
+//====================================================
+
+var table dash = table.new(position.top_right, 2, 27, border_width=1)
+
+if barstate.islast and showDashboard
+
+    // القسم الأول: نظام القرار (الأهم)
+    table.cell(dash, 0, 0, "⭐ نظام القرار", text_color=color.white, bgcolor=color.black)
+    table.cell(dash, 1, 0, decisionEmoji + " " + finalDecision, text_color=decisionColor, bgcolor=color.black, text_halign=text.align_center)
+
+    table.cell(dash, 0, 1, "القرار التفصيلي", text_color=color.white)
+    table.cell(dash, 1, 1, decisionText, text_color=decisionColor, text_halign=text.align_center)
+
+    table.cell(dash, 0, 2, "درجة القرار", text_color=color.white)
+    table.cell(dash, 1, 2, str.tostring(math.round(overallScore, 1)) + "/10", text_color=color.aqua)
+
+    // فاصل
+    table.cell(dash, 0, 3, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 3, "───────────────", text_color=color.gray)
+
+    // القسم الثاني: العوامل المساعدة
+    table.cell(dash, 0, 4, "الخلفية", text_color=color.white)
+    table.cell(dash, 1, 4, backgroundText, text_color=color.yellow)
+
+    table.cell(dash, 0, 5, "شهري / أسبوعي", text_color=color.white)
+    table.cell(dash, 1, 5, str.tostring(monthlyScore) + " / " + str.tostring(weeklyScore), text_color=color.white)
+
+    table.cell(dash, 0, 6, "درجة الخلفية", text_color=color.white)
+    table.cell(dash, 1, 6, str.tostring(math.round(bgScore, 1)) + "/10", text_color=color.orange)
+
+    // فاصل
+    table.cell(dash, 0, 7, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 7, "───────────────", text_color=color.gray)
+
+    // القسم الثالث: الإشارات
+    table.cell(dash, 0, 8, "شمعة السلوك", text_color=color.white)
+    table.cell(dash, 1, 8, recentBehavior ? "✅ موجودة" : "❌ غير موجودة", text_color=color.white)
+
+    table.cell(dash, 0, 9, "حركة شمعة السلوك", text_color=color.white)
+    table.cell(dash, 1, 9, not na(behaviorMove) ? str.tostring(behaviorMove, "#.##") + "%" : "—", text_color=color.orange)
+
+    table.cell(dash, 0, 10, "اختراق القمة", text_color=color.white)
+    table.cell(dash, 1, 10, behaviorHighBreak ? "✅ الآن" : behaviorHighBroken ? "✅ تم" : "❌", text_color=color.white)
+
+    table.cell(dash, 0, 11, "Supertrend", text_color=color.white)
+    table.cell(dash, 1, 11, stBreakout ? "✅ الآن" : priceAboveST ? "🟢 فوق" : "🔴 تحت", text_color=color.white)
+
+    table.cell(dash, 0, 12, "درجة الإشارة", text_color=color.white)
+    table.cell(dash, 1, 12, str.tostring(math.round(signalQuality, 1)) + "/10", text_color=color.aqua)
+
+    // فاصل
+    table.cell(dash, 0, 13, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 13, "───────────────", text_color=color.gray)
+
+    // القسم الرابع: السيولة
+    table.cell(dash, 0, 14, "RVOL الحالي", text_color=color.white)
+    table.cell(dash, 1, 14, not na(rvol) ? str.tostring(rvol, "#.##") + "x" : "—", text_color=color.white)
+
+    table.cell(dash, 0, 15, "السيولة", text_color=color.white)
+    table.cell(dash, 1, 15, strongLiquidity ? "🟢 قوية جداً" : liquidityMomentum ? "🟢 تحسنت" : preLiquidity ? "🟡 متوسطة" : "🔴 ضعيفة", text_color=color.white)
+
+    table.cell(dash, 0, 16, "درجة السيولة", text_color=color.white)
+    table.cell(dash, 1, 16, str.tostring(math.round(liquidityScore, 1)) + "/10", text_color=color.aqua)
+
+    // فاصل
+    table.cell(dash, 0, 17, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 17, "───────────────", text_color=color.gray)
+
+    // القسم الخامس: الموضع
+    table.cell(dash, 0, 18, "EMA 200", text_color=color.white)
+    table.cell(dash, 1, 18, aboveEMA200 ? "✅ فوق" : "❌ تحت", text_color=color.white)
+
+    table.cell(dash, 0, 19, "MACD", text_color=color.white)
+    table.cell(dash, 1, 19, macdBullish ? "✅ Bullish" : macdImproving ? "🟡 يتحسن" : "❌", text_color=color.white)
+
+    table.cell(dash, 0, 20, "درجة الموضع", text_color=color.white)
+    table.cell(dash, 1, 20, str.tostring(math.round(positionScore, 1)) + "/10", text_color=color.aqua)
+
+    // فاصل
+    table.cell(dash, 0, 21, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 21, "───────────────", text_color=color.gray)
+
+    // القسم السادس: الأهداف
+    targetStatus = (target1Hit ? "✅" : "⏳") + " " + (target2Hit ? "✅" : "⏳") + " " + (target3Hit ? "✅" : "⏳")
+    table.cell(dash, 0, 22, "الأهداف (3/5/8%)", text_color=color.white)
+    table.cell(dash, 1, 22, targetStatus, text_color=color.white)
+
+    table.cell(dash, 0, 23, "إجمالي النقاط", text_color=color.white)
+    table.cell(dash, 1, 23, str.tostring(breakoutScore) + "/10", text_color=color.aqua)
+
+    table.cell(dash, 0, 24, "حركة حالية", text_color=color.white)
+    table.cell(dash, 1, 24, not na(currentMovePct) ? str.tostring(currentMovePct, "#.##") + "%" : "—", text_color=color.white)
+
+    table.cell(dash, 0, 25, "أقصى حركة", text_color=color.white)
+    table.cell(dash, 1, 25, not na(maxMovePct) ? str.tostring(maxMovePct, "#.##") + "%" : "—", text_color=color.aqua)
+
+    table.cell(dash, 0, 26, "النمط", text_color=color.white)
+    table.cell(dash, 1, 26, decisionMode, text_color=color.aqua)
+
+//====================================================
+// 28) ALERTS
+//====================================================
+
+alertcondition(finalDecision == "STRONG BUY", title="🔥 STRONG BUY", message="🔥 STRONG BUY - {{ticker}}")
+alertcondition(finalDecision == "BUY", title="🟢 BUY", message="🟢 BUY - {{ticker}}")
+alertcondition(finalDecision == "CAUTION", title="🟡 CAUTION", message="🟡 CAUTION - {{ticker}}")
+alertcondition(finalDecision == "WAIT", title="⏳ WAIT", message="⏳ WAIT - {{ticker}}")
+alertcondition(finalDecision == "NO TRADE", title="❌ NO TRADE", message="❌ NO TRADE - {{ticker}}")
