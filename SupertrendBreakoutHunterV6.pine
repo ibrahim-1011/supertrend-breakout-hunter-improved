@@ -438,45 +438,32 @@ currentMovePct = not na(signalPrice) and signalPrice != 0 ? ((close - signalPric
 // 22) ⭐ DECISION SYSTEM V2 (محسّن مع فلاتر أمان)
 //====================================================
 
-// 1) حساب درجة الخلفية (0-10)
 bgScore = backgroundScore >= 3 ? 10 : backgroundScore == 2 ? 7 : backgroundScore == 1 ? 4 : backgroundScore == 0 ? 2 : 0
 
-// 2) حساب درجة الإشارة (0-10)
 signalQuality = explosiveOpportunity ? 10 : strongOpportunity ? 8 : breakoutScore >= 6 ? 6 : breakoutScore >= 4 ? 4 : preBreakoutReady ? 5 : 2
 
-// 3) حساب درجة السيولة (0-10)
 liquidityScore = strongLiquidity and rvolIncreasing ? 10 : strongLiquidity ? 7 : liquidityMomentum ? 8 : preLiquidity ? 5 : 2
 
-// 4) حساب درجة الموضع (0-10)
 positionScore = aboveEMA200 ? 8 : priceAboveST ? 6 : 2
 
-// ⭐ تحسين 1: فحص السيولة الدنيا (CRITICAL)
 liquidityOK = rvol >= minRVOLForEntry
 liquidityPenalty = not liquidityOK ? -3 : 0
 
-// ⭐ تحسين 2: فحص اتجاه السعر (مهم جداً)
 priceDirection = close > close[5] ? 1 : close < close[5] ? -1 : 0
 directionPenalty = priceDirection < 0 ? -4 : priceDirection == 0 ? -2 : 0
 
-// ⭐ تحسين 3: فحص MACD (مهم)
 macdPenalty = not macdBullish and not macdImproving ? -2 : 0
 
-// ⭐ تحسين 4: فحص EMA 200 (أساسي)
 emaPenalty = not aboveEMA200 ? -3 : 0
 
-// ⭐ تحسين 5: فحص Supertrend (أساسي)
 stPenalty = not priceAboveST ? -2 : 0
 
-// الحساب النهائي مع العقوبات الحاسمة
 overallScore = math.max(0, (bgScore + signalQuality + liquidityScore + positionScore) / 4 + liquidityPenalty + directionPenalty + macdPenalty + emaPenalty + stPenalty)
 
-// ⭐ تحديد مستوى القرار مع فلاتر أمان صارمة
 baseDecision = backgroundScore < -1 ? "NO TRADE" : not liquidityOK ? "NO TRADE" : priceDirection < 0 ? "NO TRADE" : overallScore < 3 ? "NO TRADE" : overallScore < 5 ? "WAIT" : overallScore < 6.5 ? "CAUTION" : overallScore < 8 ? "BUY" : "STRONG BUY"
 
-// ⭐ تطبيق نمط القرار
 finalDecision = decisionMode == "CONSERVATIVE" ? (baseDecision == "STRONG BUY" ? "BUY" : baseDecision == "BUY" ? "CAUTION" : baseDecision == "CAUTION" ? "WAIT" : baseDecision) : decisionMode == "AGGRESSIVE" ? (baseDecision == "CAUTION" ? "BUY" : baseDecision == "WAIT" ? "CAUTION" : baseDecision) : baseDecision
 
-// ألوان القرار
 decisionColor = finalDecision == "STRONG BUY" ? color.new(color.green, 20) : finalDecision == "BUY" ? color.new(color.lime, 30) : finalDecision == "CAUTION" ? color.new(color.yellow, 40) : finalDecision == "WAIT" ? color.new(color.orange, 50) : color.new(color.red, 60)
 
 decisionText = finalDecision == "STRONG BUY" ? "🔥 ادخل الآن بكل قوة" : finalDecision == "BUY" ? "🟢 ادخل الآن" : finalDecision == "CAUTION" ? "🟡 ادخل بحذر وحجم صغير" : finalDecision == "WAIT" ? "⏳ انتظر الفرصة القادمة" : "❌ لا تدخل نهائياً"
@@ -544,7 +531,6 @@ if barstate.islast and showDashboard
     table.cell(dash, 0, 3, "───────────────", text_color=color.gray)
     table.cell(dash, 1, 3, "───────────────", text_color=color.gray)
 
-    // 🔴 الفلاتر الحاسمة
     table.cell(dash, 0, 4, "🔴 فحص السيولة", text_color=color.white)
     table.cell(dash, 1, 4, liquidityOK ? "✅ جيدة" : "❌ ضعيفة جداً", text_color=liquidityOK ? color.green : color.red)
 
