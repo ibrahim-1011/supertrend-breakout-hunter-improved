@@ -1,22 +1,12 @@
 //@version=6
 indicator(
-     "Supertrend Breakout Hunter V6 | نظام القرار الذكي",
+     "Supertrend Breakout Hunter V6 ULTRA | نظام القرار الذكي",
      overlay=true,
      max_labels_count=500
 )
 
 //====================================================
-// 1) DECISION SYSTEM LEVELS
-//====================================================
-// نظام 4 مستويات واضحة جداً:
-// ❌ NO TRADE - لا تدخل نهائياً
-// ⏳ WAIT - انتظر الفرصة القادمة
-// 🟡 CAUTION - ادخل بحذر وحجم صغير
-// 🟢 BUY - ادخل الآن بثقة
-// 🔥 STRONG BUY - ادخل بكل قوتك
-
-//====================================================
-// 2) SETTINGS
+// 1) SETTINGS
 //====================================================
 
 groupHTF = "1 - الخلفية"
@@ -61,6 +51,7 @@ minBarsBelowST = input.int(10, "الحد الأدنى تحت Supertrend", minval
 volumeLen = input.int(20, "متوسط الحجم", minval=2, group=groupVOL)
 strongRVOL = input.float(1.5, "RVOL قوي", minval=0.1, step=0.1, group=groupVOL)
 preRVOL = input.float(1.1, "RVOL بداية النشاط", minval=0.5, step=0.05, group=groupVOL)
+minRVOLForEntry = input.float(1.0, "الحد الأدنى RVOL للدخول", minval=0.5, step=0.1, group=groupVOL)
 
 //-------------------------
 // Momentum
@@ -86,7 +77,6 @@ preAlertScore = input.int(6, "Pre-Breakout Score", minval=1, maxval=10, group=gr
 target1Pct = input.float(3.0, "Target 1 %", minval=0.1, step=0.1, group=groupTP)
 target2Pct = input.float(5.0, "Target 2 %", minval=0.1, step=0.1, group=groupTP)
 target3Pct = input.float(8.0, "Target 3 %", minval=0.1, step=0.1, group=groupTP)
-
 stopLossPct = input.float(2.0, "Stop Loss %", minval=0.5, step=0.1, group=groupTP)
 
 //-------------------------
@@ -105,10 +95,9 @@ showTargets = input.bool(false, "إظهار الأهداف", group=groupVIS)
 //-------------------------
 
 decisionMode = input.string("SMART", "نمط القرار", options=["SMART", "CONSERVATIVE", "AGGRESSIVE"], group=groupDEC)
-minOverallScore = input.int(5, "الحد الأدنى للنقاط الإجمالية", minval=1, maxval=10, group=groupDEC)
 
 //====================================================
-// 3) SUPERTREND
+// 2) SUPERTREND
 //====================================================
 
 f_supertrend(src, factor, len) =>
@@ -136,7 +125,7 @@ priceAboveST = close > st
 stBreakout = ta.crossover(close, st) and barstate.isconfirmed
 
 //====================================================
-// 4) BARS BELOW SUPERTREND
+// 3) BARS BELOW SUPERTREND
 //====================================================
 
 var int barsBelowST = 0
@@ -150,7 +139,7 @@ barsBelowBeforeBreakout = nz(barsBelowST[1])
 longPressure = barsBelowBeforeBreakout >= minBarsBelowST
 
 //====================================================
-// 5) EMA 200
+// 4) EMA 200
 //====================================================
 
 ema200 = ta.ema(close, emaLen)
@@ -158,7 +147,7 @@ aboveEMA200 = close > ema200
 ema200Rising = ema200 > ema200[5]
 
 //====================================================
-// 6) MACD
+// 5) MACD
 //====================================================
 
 [macdLine, macdSignalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
@@ -166,26 +155,27 @@ macdBullish = macdLine > macdSignalLine and macdHist > 0
 macdImproving = macdHist > macdHist[1]
 
 //====================================================
-// 7) VOLUME / LIQUIDITY
+// 6) VOLUME / LIQUIDITY
 //====================================================
 
 avgVolume = ta.sma(volume, volumeLen)
 rvol = avgVolume > 0 ? volume / avgVolume : na
 strongLiquidity = rvol >= strongRVOL
 preLiquidity = rvol >= preRVOL
+minLiquidity = rvol >= minRVOLForEntry
 rvolIncreasing = rvol > rvol[1]
 priceIncreasing = close > close[1]
 liquidityMomentum = preLiquidity and rvolIncreasing and priceIncreasing
 
 //====================================================
-// 8) BEHAVIORAL CANDLE
+// 7) BEHAVIORAL CANDLE
 //====================================================
 
 changePct = close[1] != 0 ? ((close - close[1]) / close[1]) * 100 : 0
 behaviorBear = close < open and changePct <= -behaviorPct and rvol >= minBehaviorRVOL
 
 //====================================================
-// 9) STORE LAST BEHAVIOR CANDLE
+// 8) STORE LAST BEHAVIOR CANDLE
 //====================================================
 
 var float behaviorHigh = na
@@ -202,47 +192,28 @@ if behaviorBear
     behaviorBar := bar_index
 
 //====================================================
-// 10) BEHAVIOR VALIDITY
+// 9) BEHAVIOR VALIDITY
 //====================================================
 
 barsSinceBehavior = not na(behaviorBar) ? bar_index - behaviorBar : na
 recentBehavior = not na(barsSinceBehavior) and barsSinceBehavior <= behaviorLookback
 
 //====================================================
-// 11) NEAR BEHAVIOR HIGH
+// 10) NEAR BEHAVIOR HIGH
 //====================================================
 
-distanceToBehaviorHigh =
-     recentBehavior and
-     not na(behaviorHigh) and
-     behaviorHigh != 0
-     ? ((behaviorHigh - close) / behaviorHigh) * 100
-     : na
-
-nearBehaviorHigh =
-     recentBehavior and
-     close < behaviorHigh and
-     distanceToBehaviorHigh >= 0 and
-     distanceToBehaviorHigh <= nearBehaviorPct
+distanceToBehaviorHigh = recentBehavior and not na(behaviorHigh) and behaviorHigh != 0 ? ((behaviorHigh - close) / behaviorHigh) * 100 : na
+nearBehaviorHigh = recentBehavior and close < behaviorHigh and distanceToBehaviorHigh >= 0 and distanceToBehaviorHigh <= nearBehaviorPct
 
 //====================================================
-// 12) BREAK BEHAVIOR HIGH
+// 11) BREAK BEHAVIOR HIGH
 //====================================================
 
-behaviorHighBreak =
-     recentBehavior and
-     not na(behaviorHigh) and
-     close > behaviorHigh and
-     close[1] <= behaviorHigh and
-     barstate.isconfirmed
-
-behaviorHighBroken =
-     recentBehavior and
-     not na(behaviorHigh) and
-     close > behaviorHigh
+behaviorHighBreak = recentBehavior and not na(behaviorHigh) and close > behaviorHigh and close[1] <= behaviorHigh and barstate.isconfirmed
+behaviorHighBroken = recentBehavior and not na(behaviorHigh) and close > behaviorHigh
 
 //====================================================
-// 13) MONTHLY BACKGROUND
+// 12) MONTHLY BACKGROUND
 //====================================================
 
 monthlyClose = request.security(syminfo.tickerid, "1M", close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
@@ -267,7 +238,7 @@ if useHTF
         monthlyScore := -1
 
 //====================================================
-// 14) WEEKLY BACKGROUND
+// 13) WEEKLY BACKGROUND
 //====================================================
 
 weeklyClose = request.security(syminfo.tickerid, "1W", close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
@@ -292,30 +263,17 @@ if useHTF
         weeklyScore := -1
 
 //====================================================
-// 15) BACKGROUND
+// 14) BACKGROUND
 //====================================================
 
 backgroundScore = monthlyScore + weeklyScore
 backgroundSupport = backgroundScore >= 2
 backgroundStrong = backgroundScore >= 3
 
-backgroundText =
-     backgroundScore >= 4
-     ? "🔥 ممتاز 4+"
-     : backgroundScore == 3
-     ? "🟢 قوي 3"
-     : backgroundScore == 2
-     ? "🟢 داعم 2"
-     : backgroundScore == 1
-     ? "🟡 +1"
-     : backgroundScore == 0
-     ? "⚪ محايد"
-     : backgroundScore == -1
-     ? "🔴 -1"
-     : "🔴 سلبي"
+backgroundText = backgroundScore >= 4 ? "🔥 ممتاز 4+" : backgroundScore == 3 ? "🟢 قوي 3" : backgroundScore == 2 ? "🟢 داعم 2" : backgroundScore == 1 ? "🟡 +1" : backgroundScore == 0 ? "⚪ محايد" : backgroundScore == -1 ? "🔴 -1" : "🔴 سلبي"
 
 //====================================================
-// 16) PRE-BREAKOUT SCORE
+// 15) PRE-BREAKOUT SCORE
 //====================================================
 
 int preScoreRaw = 0
@@ -348,14 +306,10 @@ if priceAboveST
 
 preScore = math.min(preScoreRaw, 10)
 
-preBreakoutReady =
-     recentBehavior and
-     not behaviorHighBroken and
-     preScore >= preAlertScore and
-     (backgroundSupport or longPressure)
+preBreakoutReady = recentBehavior and not behaviorHighBroken and preScore >= preAlertScore and (backgroundSupport or longPressure)
 
 //====================================================
-// 17) BREAKOUT SCORE
+// 16) BREAKOUT SCORE
 //====================================================
 
 int scoreRaw = 0
@@ -394,7 +348,7 @@ if macdBullish
 breakoutScore = math.min(scoreRaw, 10)
 
 //====================================================
-// 18) SIGNAL CLASSIFICATION
+// 17) SIGNAL CLASSIFICATION
 //====================================================
 
 behaviorBreakOnly = behaviorHighBreak and not stBreakout
@@ -406,7 +360,7 @@ explosiveOpportunity = (behaviorHighBreak or stBreakout) and breakoutScore >= ex
 strongFullTrigger = fullTrigger and backgroundSupport and (strongLiquidity or liquidityMomentum)
 
 //====================================================
-// 19) LAST SIGNAL
+// 18) LAST SIGNAL
 //====================================================
 
 newSignal = behaviorHighBreak or stBreakout
@@ -436,7 +390,7 @@ if newSignal
         signalType := "ST"
 
 //====================================================
-// 20) TARGETS & STOP LOSS
+// 19) TARGETS & STOP LOSS
 //====================================================
 
 target1 = not na(signalPrice) ? signalPrice * (1 + target1Pct / 100) : na
@@ -445,7 +399,7 @@ target3 = not na(signalPrice) ? signalPrice * (1 + target3Pct / 100) : na
 stopLoss = not na(signalPrice) ? signalPrice * (1 - stopLossPct / 100) : na
 
 //====================================================
-// 21) TARGET STATUS
+// 20) TARGET STATUS
 //====================================================
 
 var bool target1Hit = false
@@ -466,7 +420,7 @@ if not na(signalPrice)
         target3Hit := true
 
 //====================================================
-// 22) MOVEMENT AFTER SIGNAL
+// 21) MOVEMENT AFTER SIGNAL
 //====================================================
 
 var float maxMovePct = na
@@ -478,125 +432,80 @@ else if not na(signalPrice)
     if not na(moveHigh)
         maxMovePct := na(maxMovePct) ? moveHigh : math.max(maxMovePct, moveHigh)
 
-currentMovePct =
-     not na(signalPrice) and
-     signalPrice != 0
-     ? ((close - signalPrice) / signalPrice) * 100
-     : na
+currentMovePct = not na(signalPrice) and signalPrice != 0 ? ((close - signalPrice) / signalPrice) * 100 : na
 
 //====================================================
-// 23) ⭐ DECISION SYSTEM (نظام القرار الذكي)
+// 22) ⭐ DECISION SYSTEM V2 (محسّن مع فلاتر أمان)
 //====================================================
-
-// نقطة حاسمة: حساب جودة الدخول الحالي
 
 // 1) حساب درجة الخلفية (0-10)
-bgScore = 
-    backgroundScore >= 3 ? 10 :
-    backgroundScore == 2 ? 7 :
-    backgroundScore == 1 ? 4 :
-    backgroundScore == 0 ? 2 :
-    0
+bgScore = backgroundScore >= 3 ? 10 : backgroundScore == 2 ? 7 : backgroundScore == 1 ? 4 : backgroundScore == 0 ? 2 : 0
 
 // 2) حساب درجة الإشارة (0-10)
-signalQuality =
-    explosiveOpportunity ? 10 :
-    strongOpportunity ? 8 :
-    breakoutScore >= 6 ? 6 :
-    breakoutScore >= 4 ? 4 :
-    preBreakoutReady ? 5 :
-    2
+signalQuality = explosiveOpportunity ? 10 : strongOpportunity ? 8 : breakoutScore >= 6 ? 6 : breakoutScore >= 4 ? 4 : preBreakoutReady ? 5 : 2
 
 // 3) حساب درجة السيولة (0-10)
-liquidityScore =
-    strongLiquidity and rvolIncreasing ? 10 :
-    strongLiquidity ? 7 :
-    liquidityMomentum ? 8 :
-    preLiquidity ? 5 :
-    2
+liquidityScore = strongLiquidity and rvolIncreasing ? 10 : strongLiquidity ? 7 : liquidityMomentum ? 8 : preLiquidity ? 5 : 2
 
 // 4) حساب درجة الموضع (0-10)
-positionScore =
-    aboveEMA200 ? 8 :
-    priceAboveST ? 6 :
-    2
+positionScore = aboveEMA200 ? 8 : priceAboveST ? 6 : 2
 
-// 5) الحساب النهائي
-overallScore = (bgScore + signalQuality + liquidityScore + positionScore) / 4
+// ⭐ تحسين 1: فحص السيولة الدنيا (CRITICAL)
+liquidityOK = rvol >= minRVOLForEntry
+liquidityPenalty = not liquidityOK ? -3 : 0
 
-// ⭐ تحديد مستوى القرار الأساسي
-baseDecision =
-    backgroundScore < 0 ? "NO TRADE" :
-    overallScore < 3 ? "NO TRADE" :
-    overallScore < 5 ? "WAIT" :
-    overallScore < 7 ? "CAUTION" :
-    overallScore < 8.5 ? "BUY" :
-    "STRONG BUY"
+// ⭐ تحسين 2: فحص اتجاه السعر (مهم جداً)
+priceDirection = close > close[5] ? 1 : close < close[5] ? -1 : 0
+directionPenalty = priceDirection < 0 ? -4 : priceDirection == 0 ? -2 : 0
 
-// ⭐ تطبيق نمط القرار (SMART, CONSERVATIVE, AGGRESSIVE)
-finalDecision =
-    decisionMode == "CONSERVATIVE" ?
-        (
-            baseDecision == "STRONG BUY" ? "BUY" :
-            baseDecision == "BUY" ? "CAUTION" :
-            baseDecision == "CAUTION" ? "WAIT" :
-            baseDecision
-        ) :
-    decisionMode == "AGGRESSIVE" ?
-        (
-            baseDecision == "CAUTION" ? "BUY" :
-            baseDecision == "WAIT" ? "CAUTION" :
-            baseDecision
-        ) :
-    baseDecision
+// ⭐ تحسين 3: فحص MACD (مهم)
+macdPenalty = not macdBullish and not macdImproving ? -2 : 0
+
+// ⭐ تحسين 4: فحص EMA 200 (أساسي)
+emaPenalty = not aboveEMA200 ? -3 : 0
+
+// ⭐ تحسين 5: فحص Supertrend (أساسي)
+stPenalty = not priceAboveST ? -2 : 0
+
+// الحساب النهائي مع العقوبات الحاسمة
+overallScore = math.max(0, (bgScore + signalQuality + liquidityScore + positionScore) / 4 + liquidityPenalty + directionPenalty + macdPenalty + emaPenalty + stPenalty)
+
+// ⭐ تحديد مستوى القرار مع فلاتر أمان صارمة
+baseDecision = backgroundScore < -1 ? "NO TRADE" : not liquidityOK ? "NO TRADE" : priceDirection < 0 ? "NO TRADE" : overallScore < 3 ? "NO TRADE" : overallScore < 5 ? "WAIT" : overallScore < 6.5 ? "CAUTION" : overallScore < 8 ? "BUY" : "STRONG BUY"
+
+// ⭐ تطبيق نمط القرار
+finalDecision = decisionMode == "CONSERVATIVE" ? (baseDecision == "STRONG BUY" ? "BUY" : baseDecision == "BUY" ? "CAUTION" : baseDecision == "CAUTION" ? "WAIT" : baseDecision) : decisionMode == "AGGRESSIVE" ? (baseDecision == "CAUTION" ? "BUY" : baseDecision == "WAIT" ? "CAUTION" : baseDecision) : baseDecision
 
 // ألوان القرار
-decisionColor =
-    finalDecision == "STRONG BUY" ? color.new(color.green, 20) :
-    finalDecision == "BUY" ? color.new(color.lime, 30) :
-    finalDecision == "CAUTION" ? color.new(color.yellow, 40) :
-    finalDecision == "WAIT" ? color.new(color.orange, 50) :
-    color.new(color.red, 60)
+decisionColor = finalDecision == "STRONG BUY" ? color.new(color.green, 20) : finalDecision == "BUY" ? color.new(color.lime, 30) : finalDecision == "CAUTION" ? color.new(color.yellow, 40) : finalDecision == "WAIT" ? color.new(color.orange, 50) : color.new(color.red, 60)
 
-decisionText =
-    finalDecision == "STRONG BUY" ? "🔥 ادخل الآن بكل قوة" :
-    finalDecision == "BUY" ? "🟢 ادخل الآن" :
-    finalDecision == "CAUTION" ? "🟡 ادخل بحذر وحجم صغير" :
-    finalDecision == "WAIT" ? "⏳ انتظر الفرصة القادمة" :
-    "❌ لا تدخل نهائياً"
+decisionText = finalDecision == "STRONG BUY" ? "🔥 ادخل الآن بكل قوة" : finalDecision == "BUY" ? "🟢 ادخل الآن" : finalDecision == "CAUTION" ? "🟡 ادخل بحذر وحجم صغير" : finalDecision == "WAIT" ? "⏳ انتظر الفرصة القادمة" : "❌ لا تدخل نهائياً"
 
-decisionEmoji =
-    finalDecision == "STRONG BUY" ? "🔥" :
-    finalDecision == "BUY" ? "🟢" :
-    finalDecision == "CAUTION" ? "🟡" :
-    finalDecision == "WAIT" ? "⏳" :
-    "❌"
+decisionEmoji = finalDecision == "STRONG BUY" ? "🔥" : finalDecision == "BUY" ? "🟢" : finalDecision == "CAUTION" ? "🟡" : finalDecision == "WAIT" ? "⏳" : "❌"
 
 //====================================================
-// 24) COLORS
+// 23) COLORS
 //====================================================
 
 stColor = stRising ? color.lime : color.red
 
 //====================================================
-// 25) PLOTS
+// 24) PLOTS
 //====================================================
 
 plot(showST ? st : na, title="Supertrend", color=stColor, linewidth=2)
 plot(showEMA ? ema200 : na, title="EMA 200", color=color.orange, linewidth=1)
 plot(showBehaviorHigh and recentBehavior ? behaviorHigh : na, title="Behavior High", color=color.red, linewidth=2, style=plot.style_stepline)
 
-// رسم Stop Loss و Targets
 plot(showTargets ? stopLoss : na, title="Stop Loss", color=color.red, style=plot.style_linebr, linewidth=2)
 plot(showTargets ? target1 : na, title="Target 1", color=color.green, style=plot.style_linebr)
 plot(showTargets ? target2 : na, title="Target 2", color=color.blue, style=plot.style_linebr)
 plot(showTargets ? target3 : na, title="Target 3", color=color.purple, style=plot.style_linebr)
 
-// خلفية لون القرار
 bgcolor(finalDecision != "NO TRADE" and finalDecision != "WAIT" and barstate.islast ? decisionColor : na, title="Decision Background")
 
 //====================================================
-// 26) SIGNALS
+// 25) SIGNALS
 //====================================================
 
 plotshape(showSignals and behaviorBear, title="Behavior Bear", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny, text="-3%")
@@ -616,14 +525,13 @@ plotshape(showSignals and explosiveOpportunity, title="Explosive Opportunity", s
 plotshape(showSignals and strongFullTrigger, title="Strong Full", style=shape.labelup, location=location.belowbar, color=color.blue, textcolor=color.white, size=size.small, text="🔥")
 
 //====================================================
-// 27) DASHBOARD - لوحة المعلومات المحسّنة
+// 26) DASHBOARD - لوحة المعلومات المحسّنة
 //====================================================
 
-var table dash = table.new(position.top_right, 2, 27, border_width=1)
+var table dash = table.new(position.top_right, 2, 29, border_width=1)
 
 if barstate.islast and showDashboard
 
-    // القسم الأول: نظام القرار (الأهم)
     table.cell(dash, 0, 0, "⭐ نظام القرار", text_color=color.white, bgcolor=color.black)
     table.cell(dash, 1, 0, decisionEmoji + " " + finalDecision, text_color=decisionColor, bgcolor=color.black, text_halign=text.align_center)
 
@@ -633,91 +541,87 @@ if barstate.islast and showDashboard
     table.cell(dash, 0, 2, "درجة القرار", text_color=color.white)
     table.cell(dash, 1, 2, str.tostring(math.round(overallScore, 1)) + "/10", text_color=color.aqua)
 
-    // فاصل
     table.cell(dash, 0, 3, "───────────────", text_color=color.gray)
     table.cell(dash, 1, 3, "───────────────", text_color=color.gray)
 
-    // القسم الثاني: العوامل المساعدة
-    table.cell(dash, 0, 4, "الخلفية", text_color=color.white)
-    table.cell(dash, 1, 4, backgroundText, text_color=color.yellow)
+    // 🔴 الفلاتر الحاسمة
+    table.cell(dash, 0, 4, "🔴 فحص السيولة", text_color=color.white)
+    table.cell(dash, 1, 4, liquidityOK ? "✅ جيدة" : "❌ ضعيفة جداً", text_color=liquidityOK ? color.green : color.red)
 
-    table.cell(dash, 0, 5, "شهري / أسبوعي", text_color=color.white)
-    table.cell(dash, 1, 5, str.tostring(monthlyScore) + " / " + str.tostring(weeklyScore), text_color=color.white)
+    table.cell(dash, 0, 5, "🔴 اتجاه السعر", text_color=color.white)
+    table.cell(dash, 1, 5, priceDirection > 0 ? "✅ صاعد" : priceDirection < 0 ? "❌ هابط" : "⚪ محايد", text_color=priceDirection > 0 ? color.green : color.red)
 
-    table.cell(dash, 0, 6, "درجة الخلفية", text_color=color.white)
-    table.cell(dash, 1, 6, str.tostring(math.round(bgScore, 1)) + "/10", text_color=color.orange)
+    table.cell(dash, 0, 6, "🔴 MACD", text_color=color.white)
+    table.cell(dash, 1, 6, macdBullish ? "✅ Bullish" : macdImproving ? "🟡 يتحسن" : "❌", text_color=macdBullish ? color.green : color.red)
 
-    // فاصل
-    table.cell(dash, 0, 7, "───────────────", text_color=color.gray)
-    table.cell(dash, 1, 7, "───────────────", text_color=color.gray)
+    table.cell(dash, 0, 7, "🔴 EMA 200", text_color=color.white)
+    table.cell(dash, 1, 7, aboveEMA200 ? "✅ فوق" : "❌ تحت", text_color=aboveEMA200 ? color.green : color.red)
 
-    // القسم الثالث: الإشارات
-    table.cell(dash, 0, 8, "شمعة السلوك", text_color=color.white)
-    table.cell(dash, 1, 8, recentBehavior ? "✅ موجودة" : "❌ غير موجودة", text_color=color.white)
+    table.cell(dash, 0, 8, "🔴 Supertrend", text_color=color.white)
+    table.cell(dash, 1, 8, priceAboveST ? "✅ فوق" : "❌ تحت", text_color=priceAboveST ? color.green : color.red)
 
-    table.cell(dash, 0, 9, "حركة شمعة السلوك", text_color=color.white)
-    table.cell(dash, 1, 9, not na(behaviorMove) ? str.tostring(behaviorMove, "#.##") + "%" : "—", text_color=color.orange)
+    table.cell(dash, 0, 9, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 9, "───────────────", text_color=color.gray)
 
-    table.cell(dash, 0, 10, "اختراق القمة", text_color=color.white)
-    table.cell(dash, 1, 10, behaviorHighBreak ? "✅ الآن" : behaviorHighBroken ? "✅ تم" : "❌", text_color=color.white)
+    table.cell(dash, 0, 10, "الخلفية", text_color=color.white)
+    table.cell(dash, 1, 10, backgroundText, text_color=color.yellow)
 
-    table.cell(dash, 0, 11, "Supertrend", text_color=color.white)
-    table.cell(dash, 1, 11, stBreakout ? "✅ الآن" : priceAboveST ? "🟢 فوق" : "🔴 تحت", text_color=color.white)
+    table.cell(dash, 0, 11, "شهري / أسبوعي", text_color=color.white)
+    table.cell(dash, 1, 11, str.tostring(monthlyScore) + " / " + str.tostring(weeklyScore), text_color=color.white)
 
-    table.cell(dash, 0, 12, "درجة الإشارة", text_color=color.white)
-    table.cell(dash, 1, 12, str.tostring(math.round(signalQuality, 1)) + "/10", text_color=color.aqua)
+    table.cell(dash, 0, 12, "درجة الخلفية", text_color=color.white)
+    table.cell(dash, 1, 12, str.tostring(math.round(bgScore, 1)) + "/10", text_color=color.orange)
 
-    // فاصل
     table.cell(dash, 0, 13, "───────────────", text_color=color.gray)
     table.cell(dash, 1, 13, "───────────────", text_color=color.gray)
 
-    // القسم الرابع: السيولة
-    table.cell(dash, 0, 14, "RVOL الحالي", text_color=color.white)
-    table.cell(dash, 1, 14, not na(rvol) ? str.tostring(rvol, "#.##") + "x" : "—", text_color=color.white)
+    table.cell(dash, 0, 14, "شمعة السلوك", text_color=color.white)
+    table.cell(dash, 1, 14, recentBehavior ? "✅ موجودة" : "❌ غير موجودة", text_color=color.white)
 
-    table.cell(dash, 0, 15, "السيولة", text_color=color.white)
-    table.cell(dash, 1, 15, strongLiquidity ? "🟢 قوية جداً" : liquidityMomentum ? "🟢 تحسنت" : preLiquidity ? "🟡 متوسطة" : "🔴 ضعيفة", text_color=color.white)
+    table.cell(dash, 0, 15, "حركة شمعة السلوك", text_color=color.white)
+    table.cell(dash, 1, 15, not na(behaviorMove) ? str.tostring(behaviorMove, "#.##") + "%" : "—", text_color=color.orange)
 
-    table.cell(dash, 0, 16, "درجة السيولة", text_color=color.white)
-    table.cell(dash, 1, 16, str.tostring(math.round(liquidityScore, 1)) + "/10", text_color=color.aqua)
+    table.cell(dash, 0, 16, "اختراق القمة", text_color=color.white)
+    table.cell(dash, 1, 16, behaviorHighBreak ? "✅ الآن" : behaviorHighBroken ? "✅ تم" : "❌", text_color=color.white)
 
-    // فاصل
-    table.cell(dash, 0, 17, "───────────────", text_color=color.gray)
-    table.cell(dash, 1, 17, "───────────────", text_color=color.gray)
+    table.cell(dash, 0, 17, "درجة الإشارة", text_color=color.white)
+    table.cell(dash, 1, 17, str.tostring(math.round(signalQuality, 1)) + "/10", text_color=color.aqua)
 
-    // القسم الخامس: الموضع
-    table.cell(dash, 0, 18, "EMA 200", text_color=color.white)
-    table.cell(dash, 1, 18, aboveEMA200 ? "✅ فوق" : "❌ تحت", text_color=color.white)
+    table.cell(dash, 0, 18, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 18, "───────────────", text_color=color.gray)
 
-    table.cell(dash, 0, 19, "MACD", text_color=color.white)
-    table.cell(dash, 1, 19, macdBullish ? "✅ Bullish" : macdImproving ? "🟡 يتحسن" : "❌", text_color=color.white)
+    table.cell(dash, 0, 19, "RVOL الحالي", text_color=color.white)
+    table.cell(dash, 1, 19, not na(rvol) ? str.tostring(rvol, "#.##") + "x" : "—", text_color=color.white)
 
-    table.cell(dash, 0, 20, "درجة الموضع", text_color=color.white)
-    table.cell(dash, 1, 20, str.tostring(math.round(positionScore, 1)) + "/10", text_color=color.aqua)
+    table.cell(dash, 0, 20, "الحد الأدنى", text_color=color.white)
+    table.cell(dash, 1, 20, str.tostring(minRVOLForEntry, "#.##") + "x", text_color=color.white)
 
-    // فاصل
-    table.cell(dash, 0, 21, "───────────────", text_color=color.gray)
-    table.cell(dash, 1, 21, "───────────────", text_color=color.gray)
+    table.cell(dash, 0, 21, "السيولة", text_color=color.white)
+    table.cell(dash, 1, 21, strongLiquidity ? "🟢 قوية جداً" : liquidityMomentum ? "🟢 تحسنت" : preLiquidity ? "🟡 متوسطة" : "🔴 ضعيفة", text_color=color.white)
 
-    // القسم السادس: الأهداف
-    targetStatus = (target1Hit ? "✅" : "⏳") + " " + (target2Hit ? "✅" : "⏳") + " " + (target3Hit ? "✅" : "⏳")
-    table.cell(dash, 0, 22, "الأهداف (3/5/8%)", text_color=color.white)
-    table.cell(dash, 1, 22, targetStatus, text_color=color.white)
+    table.cell(dash, 0, 22, "درجة السيولة", text_color=color.white)
+    table.cell(dash, 1, 22, str.tostring(math.round(liquidityScore, 1)) + "/10", text_color=color.aqua)
 
-    table.cell(dash, 0, 23, "إجمالي النقاط", text_color=color.white)
-    table.cell(dash, 1, 23, str.tostring(breakoutScore) + "/10", text_color=color.aqua)
+    table.cell(dash, 0, 23, "───────────────", text_color=color.gray)
+    table.cell(dash, 1, 23, "───────────────", text_color=color.gray)
 
-    table.cell(dash, 0, 24, "حركة حالية", text_color=color.white)
-    table.cell(dash, 1, 24, not na(currentMovePct) ? str.tostring(currentMovePct, "#.##") + "%" : "—", text_color=color.white)
+    table.cell(dash, 0, 24, "درجة الموضع", text_color=color.white)
+    table.cell(dash, 1, 24, str.tostring(math.round(positionScore, 1)) + "/10", text_color=color.aqua)
 
-    table.cell(dash, 0, 25, "أقصى حركة", text_color=color.white)
-    table.cell(dash, 1, 25, not na(maxMovePct) ? str.tostring(maxMovePct, "#.##") + "%" : "—", text_color=color.aqua)
+    table.cell(dash, 0, 25, "إجمالي النقاط", text_color=color.white)
+    table.cell(dash, 1, 25, str.tostring(breakoutScore) + "/10", text_color=color.aqua)
 
-    table.cell(dash, 0, 26, "النمط", text_color=color.white)
-    table.cell(dash, 1, 26, decisionMode, text_color=color.aqua)
+    table.cell(dash, 0, 26, "حركة حالية", text_color=color.white)
+    table.cell(dash, 1, 26, not na(currentMovePct) ? str.tostring(currentMovePct, "#.##") + "%" : "—", text_color=color.white)
+
+    table.cell(dash, 0, 27, "أقصى حركة", text_color=color.white)
+    table.cell(dash, 1, 27, not na(maxMovePct) ? str.tostring(maxMovePct, "#.##") + "%" : "—", text_color=color.aqua)
+
+    table.cell(dash, 0, 28, "النمط", text_color=color.white)
+    table.cell(dash, 1, 28, decisionMode, text_color=color.aqua)
 
 //====================================================
-// 28) ALERTS
+// 27) ALERTS
 //====================================================
 
 alertcondition(finalDecision == "STRONG BUY", title="🔥 STRONG BUY", message="🔥 STRONG BUY - {{ticker}}")
