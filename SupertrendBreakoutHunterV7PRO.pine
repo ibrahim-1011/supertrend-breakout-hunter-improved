@@ -356,15 +356,15 @@ plot(showST ? st : na, title="Supertrend", color=stColor, linewidth=2)
 plot(showEMA ? ema200 : na, title="EMA 200", color=color.orange, linewidth=1)
 plot(showBehaviorHigh and recentBehavior ? behaviorHigh : na, title="Behavior High", color=color.red, linewidth=2, style=plot.style_stepline)
 
-plot(positionOpen ? positionStopLoss : na, title="Active Stop Loss", color=color.red, style=plot.style_linebr, linewidth=3)
-plot(positionOpen ? target1 : na, title="Active Target 1", color=color.green, style=plot.style_linebr, linewidth=2)
-plot(positionOpen ? target2 : na, title="Active Target 2", color=color.blue, style=plot.style_linebr, linewidth=2)
-plot(positionOpen ? target3 : na, title="Active Target 3", color=color.purple, style=plot.style_linebr, linewidth=2)
-plot(positionOpen ? signalEntryPrice : na, title="Entry Price", color=color.yellow, style=plot.style_linebr, linewidth=2)
+// رسم المركز المفتوح فقط
+if positionOpen
+    plot(positionStopLoss, title="Active Stop Loss", color=color.red, style=plot.style_linebr, linewidth=3)
+    plot(target1, title="Active Target 1", color=color.green, style=plot.style_linebr, linewidth=2)
+    plot(target2, title="Active Target 2", color=color.blue, style=plot.style_linebr, linewidth=2)
+    plot(target3, title="Active Target 3", color=color.purple, style=plot.style_linebr, linewidth=2)
+    plot(signalEntryPrice, title="Entry Price", color=color.yellow, style=plot.style_linebr, linewidth=2)
 
 bgcolor(finalDecision != "NO TRADE" and finalDecision != "WAIT" and barstate.islast ? decisionColor : na, title="Decision Background")
-
-hline(positionOpen ? positionStopLoss : na, "Stop Loss Alert", color=color.red, linestyle=hline.style_dashed, linewidth=2)
 
 //====================================================
 // 10) SIGNALS
@@ -497,7 +497,7 @@ if barstate.islast and showDashboard
     table.cell(dash, 1, row, not na(rvol) ? str.tostring(rvol, "#.##") + "x" : "—", text_color=color.white)
     row += 1
 
-    table.cell(dash, 0, row, "��لنمط", text_color=color.white)
+    table.cell(dash, 0, row, "النمط", text_color=color.white)
     table.cell(dash, 1, row, decisionMode, text_color=color.aqua)
 
 //====================================================
